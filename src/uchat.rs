@@ -1,3 +1,13 @@
+#[tokio::test]
+async fn test_connection() {
+	let ac = AccessConfig::new("#bWFpbg==".to_string());
+	let mut uconn = UChatRoom::new(ac);
+	
+	assert_eq!(true, uconn.connect().await.is_ok());
+}
+
+
+use log::*;
 pub enum UChatAuthLevel {
 	Admin, //왕관
 	SubAdmin, //은색 왕관
@@ -166,7 +176,7 @@ impl AccessConfig {
 		//jtest1nicknameidlevelauthiconnickcon6fe01303583a9e71e6ece678a4f268ef8TkDUyBiousTta7Ko7qwyIMU6fqgTl9lutf-81604136208
 		//this.socket.send(['j', this.id, data.nick, data.id, data.level, (data.auth||''), data.icons, data.nickcon, data.other, data.hash, session, ua.charset, data.time, this.installData.password, cache['client_token'], data.profileimg]);
 		format!(
-			"j{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}",
+			"j{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}\n",
 			self.room,
 			self.nick.as_ref().unwrap_or(&"".to_string()),
 			self.id.as_ref().unwrap_or(&"".to_string()),
@@ -186,20 +196,27 @@ impl AccessConfig {
 	}
 }
 
-enum RoomControlCommand {
+pub enum RoomControlCommand {
 
 }
 
-struct UChatRoom {
+enum CurrentState {
+	none,
+	join
+}
+
+pub struct UChatRoom {
 	access_info: AccessConfig,
 	ws: Option<tokio_tungstenite::WebSocketStream<tokio_native_tls::TlsStream<tokio::net::TcpStream>>>,
 
 	cmd_rx: tokio::sync::mpsc::UnboundedReceiver<RoomControlCommand>,
 	cmd_tx: tokio::sync::mpsc::UnboundedSender<RoomControlCommand>,
+
+	state: CurrentState
 }
 
 impl UChatRoom {
-	fn new(access_info: AccessConfig) -> Self {
+	pub fn new(access_info: AccessConfig) -> Self {
 		let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
 
 		UChatRoom {
@@ -207,7 +224,9 @@ impl UChatRoom {
 			ws: None,
 
 			cmd_rx,
-			cmd_tx
+			cmd_tx,
+
+			state: CurrentState::none
 		}
 	}
 
@@ -215,10 +234,10 @@ impl UChatRoom {
 		return self.cmd_tx.clone();
 	}
 
-	async fn connect(&mut self) -> Result<(), String> {
-		return self.connect_with_uri(url::Url::parse("wss://kr-a-worker1.uchat.io:5001/").unwrap()).await;
+	pub async fn connect(&mut self) -> Result<(), String> {
+		return self.connect_with_uri(url::Url::parse("ws://kr-a-worker1.uchat.io:5001/").unwrap()).await;
 	}
-	async fn connect_with_uri(&mut self, uri: url::Url) -> Result<(), String> {
+	pub async fn connect_with_uri(&mut self, uri: url::Url) -> Result<(), String> {
 		let tls_connector = native_tls::TlsConnector::new().map_err(|e| e.to_string())?;
 		let tls_conn = tokio_native_tls::TlsConnector::from(tls_connector);
 
@@ -229,32 +248,36 @@ impl UChatRoom {
 		return Ok(());
 	}
 
-	async fn process(&mut self) -> Result<(), String> {
+	pub async fn process(&mut self) -> Result<(), String> {
 		if self.ws.is_none() { return Err("웹소켓이 연결되지 않았습니다.".to_string()); }
 		let mut ws: tokio_tungstenite::WebSocketStream<tokio_native_tls::TlsStream<tokio::net::TcpStream>> = self.ws.take().unwrap();
 		use futures_util::{SinkExt, StreamExt};
 
 		ws.send(tokio_tungstenite::tungstenite::Message::Binary(self.access_info.build().as_bytes().to_vec())).await.map_err(|e| e.to_string())?;
-		tokio::select! {
-			cmd = self.cmd_rx.recv() => {
-
-			}
-			rcv = ws.next() => {
-				if rcv.is_none() {
-					return Ok(());
+		loop {
+			tokio::select! {
+				cmd = self.cmd_rx.recv() => {
+	
 				}
-
-				let rcv = rcv.unwrap();
-				match rcv {
-					Err(e) => {
-
-					},
-					Ok(item) => {
-
+				rcv = ws.next() => {
+					debug!("{:?}", rcv);
+	
+					if rcv.is_none() {
+						return Ok(());
+					}
+	
+	
+					let rcv = rcv.unwrap();
+					match rcv {
+						Err(e) => {
+	
+						},
+						Ok(item) => {
+							
+						}
 					}
 				}
 			}
-
 		}
 
 		return Ok(());

@@ -2,6 +2,9 @@ use log::*;
 
 mod uchat;
 
+#[cfg(test)]
+mod test_uchat;
+
 fn main() {
 	simple_logging::log_to_stderr(log::LevelFilter::Debug);
 
@@ -19,7 +22,7 @@ fn main() {
 
 
 async fn entry() {
-	let ac = uchat::AccessConfig::new("#bWFpbg==".to_string());
+	let ac = uchat::JoinConfig::new("#bWFpbg==".to_string());
 	let mut uconn = uchat::UChatRoom::new(ac);
 	let r = uconn.connect().await;
 	debug!("{:?}", r);

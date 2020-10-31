@@ -1,13 +1,6 @@
-#[tokio::test]
-async fn test_connection() {
-	let ac = AccessConfig::new("#bWFpbg==".to_string());
-	let mut uconn = UChatRoom::new(ac);
-	
-	assert_eq!(true, uconn.connect().await.is_ok());
-}
-
-
 use log::*;
+
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum UChatAuthLevel {
 	Admin, //왕관
 	SubAdmin, //은색 왕관
@@ -27,23 +20,23 @@ impl ToString for UChatAuthLevel {
 	}
 }
 
-pub struct AccessConfig {
-	room: String,
-	token: Option<String>,
-	nick: Option<String>,
-	id: Option<String>,
-	level: Option<String>,
-	auth: UChatAuthLevel,
-	icon: Option<String>,
-	nickcon: Option<String>,
-	other: Option<String>,
-	password: Option<String>,
-	cache_token: Option<String>,
-	profile_image: Option<String>,
+pub struct JoinConfig {
+	pub room: String,
+	pub token: Option<String>,
+	pub nick: Option<String>,
+	pub id: Option<String>,
+	pub level: Option<String>,
+	pub auth: UChatAuthLevel,
+	pub icon: Option<String>,
+	pub nickcon: Option<String>,
+	pub other: Option<String>,
+	pub password: Option<String>,
+	pub cache_token: Option<String>,
+	pub profile_image: Option<String>,
 }
-impl AccessConfig {
+impl JoinConfig {
 	pub fn new(room: String) -> Self {
-		AccessConfig {
+		JoinConfig {
 			room,
 			token: None,
 			nick: None,
@@ -79,7 +72,7 @@ impl AccessConfig {
 		self.auth = auth;
 		return self;
 	}
-	pub fn icons(mut self, icon: Option<String>) -> Self {
+	pub fn icon(mut self, icon: Option<String>) -> Self {
 		self.icon = icon;
 		return self;
 	}
@@ -87,11 +80,15 @@ impl AccessConfig {
 		self.nickcon = nickcon;
 		return self;
 	}
+	pub fn other(mut self, other: Option<String>) -> Self {
+		self.other = other;
+		return self;
+	}
 	pub fn password(mut self, password: Option<String>) -> Self {
 		self.password = password;
 		return self;
 	}
-	pub fn clienToken(mut self, token: Option<String>) -> Self {
+	pub fn client_token(mut self, token: Option<String>) -> Self {
 		self.cache_token = token;
 		return self;
 	}
@@ -206,7 +203,7 @@ enum CurrentState {
 }
 
 pub struct UChatRoom {
-	access_info: AccessConfig,
+	access_info: JoinConfig,
 	ws: Option<tokio_tungstenite::WebSocketStream<tokio_native_tls::TlsStream<tokio::net::TcpStream>>>,
 
 	cmd_rx: tokio::sync::mpsc::UnboundedReceiver<RoomControlCommand>,
@@ -216,7 +213,7 @@ pub struct UChatRoom {
 }
 
 impl UChatRoom {
-	pub fn new(access_info: AccessConfig) -> Self {
+	pub fn new(access_info: JoinConfig) -> Self {
 		let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
 
 		UChatRoom {

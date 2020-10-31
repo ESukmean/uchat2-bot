@@ -90,7 +90,7 @@ impl AccessConfig {
 		return self;
 	}
 
-	fn implode(&self, glue: &str, time: &String) -> String {
+	fn implode(&self, token: &str, time: &String) -> String {
 		// ksort => ["auth"]["icons"]["id"]["level"]["nick"]["nickcon"]["other"]["room"]["time"]["token"] 
 		let mut result = String::with_capacity(128);
 
@@ -98,44 +98,44 @@ impl AccessConfig {
 			UChatAuthLevel::None => (),
 			auth => {
 				result.push_str(&auth.to_string());
-				result.push_str(glue);
+				result.push_str(token);
 			}
 		};
 		if let Some(v) = self.icon.as_ref() {
 			result.push_str(&v.to_string());
-			result.push_str(glue);
+			result.push_str(token);
 		}
 		if let Some(v) = self.id.as_ref() {
 			result.push_str(&v.to_string());
-			result.push_str(glue);
+			result.push_str(token);
 		}
 		if let Some(v) = self.level.as_ref() {
 			result.push_str(&v.to_string());
-			result.push_str(glue);
+			result.push_str(token);
 		}
 		if let Some(v) = self.nick.as_ref() {
 			result.push_str(&v.to_string());
-			result.push_str(glue);
+			result.push_str(token);
 		}
 		if let Some(v) = self.nickcon.as_ref() {
 			result.push_str(&v.to_string());
-			result.push_str(glue);
+			result.push_str(token);
 		}
 		if let Some(v) = self.other.as_ref() {
 			result.push_str(&v.to_string());
-			result.push_str(glue);
+			result.push_str(token);
 		}
 
 		{
 			result.push_str(&self.room);
-			result.push_str(glue);
+			result.push_str(token);
 		}
 		{
 			result.push_str(&format!("{}", time));
-			result.push_str(glue);
+			result.push_str(token);
 		}
 		{
-			result.push_str(glue);
+			result.push_str(token);
 		}
 
 		return result;
@@ -187,9 +187,26 @@ impl AccessConfig {
 }
 
 struct UChatRoom {
-
+	access_info: AccessConfig
 }
 
 impl UChatRoom {
-	
+	fn new(access_info: AccessConfig) -> Self {
+		UChatRoom {
+			access_info
+		}
+	}
+
+	async fn connect(&mut self) {
+		self.connect_with_uri(url::Url::parse("wss://kr-a-worker1.uchat.io:5001/").unwrap()).await;
+	}
+	async fn connect_with_uri(&mut self, uri: url::Url) -> tokio_tungstenite::WebSocketStream<tokio_native_tls::TlsStream<tokio::net::TcpStream>> {
+		let tls_connector = native_tls::TlsConnector::new().unwrap();
+		let tls_conn = tokio_native_tls::TlsConnector::from(tls_connector);
+
+		let tcp = tokio::net::TcpStream::connect((uri.host_str().unwrap(), uri.port().unwrap())).await.unwrap();
+		let tls = tls_conn.connect(uri.host_str().unwrap(), tcp).await.unwrap();
+
+		return tokio_tungstenite::client_async_tls(uri.as_str(), tls).await.unwrap().0;
+	}
 }

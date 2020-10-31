@@ -5,8 +5,7 @@ mod uchat;
 fn main() {
     simple_logging::log_to_stderr(log::LevelFilter::Debug);
 
-    let mut runtime = tokio::runtime::Builder::new()
-        .threaded_scheduler()
+    let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .on_thread_start(|| println!("new thread start"))
         .on_thread_stop(|| println!("thread  stopped"))

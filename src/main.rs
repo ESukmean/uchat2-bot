@@ -10,21 +10,22 @@ fn main() {
 
 	let runtime = tokio::runtime::Builder::new_multi_thread()
 		.enable_all()
-		.on_thread_start(|| println!("new thread start"))
-		.on_thread_stop(|| println!("thread  stopped"))
+		.on_thread_start(|| debug!("new thread start"))
+		.on_thread_stop(|| debug!("thread stopped"))
 		.build()
 		.unwrap(); 
 
-	debug!("runtime start");
+	info!("runtime start");
 	runtime.block_on(entry());
-	debug!("runtime stopped");
+	info!("runtime stopped");
 }
 
 
 async fn entry() {
 	let ac = uchat::JoinConfig::new("#bWFpbg==".to_string());
-	let mut uconn = uchat::UChatRoom::new(ac);
+	let mut uconn = uchat::UChatRoomProc::new(ac);
 	let r = uconn.connect().await;
 	debug!("{:?}", r);
 	let r = uconn.process().await;
+	debug!("{:?}", r);
 }

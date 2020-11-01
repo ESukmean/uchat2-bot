@@ -3,14 +3,14 @@ use super::uchat;
 #[tokio::test]
 async fn test_connect() {
 	let jc = uchat::JoinConfig::new("#bWFpbg==".to_string());
-	let mut uconn = uchat::UChatRoom::new(jc);
+	let mut uconn = uchat::UChatRoomProc::new(jc);
 	
 	assert_eq!(true, uconn.connect().await.is_ok());
 }
 #[tokio::test]
 async fn test_connect_different_url() {
 	let jc = uchat::JoinConfig::new("#bWFpbg==".to_string());
-	let mut uconn = uchat::UChatRoom::new(jc);
+	let mut uconn = uchat::UChatRoomProc::new(jc);
 	let uri = url::Url::parse("ws://kr-a-worker1.uchat.io:5002/").unwrap();
 
 	assert_eq!(true, uconn.connect_with_uri(uri).await.is_ok());
@@ -52,16 +52,16 @@ fn test_join_config() {
 		.client_token(cache_token.clone())
 		.profile_image(profile_image.clone());
 	
-		assert_eq!(jc.room, room);
-		assert_eq!(jc.token, token);
-		assert_eq!(jc.nick, nick);
-		assert_eq!(jc.id, id);
-		assert_eq!(jc.level, level);
-		assert_eq!(jc.auth, auth);
-		assert_eq!(jc.icon, icon);
-		assert_eq!(jc.nickcon, nickcon);
-		assert_eq!(jc.other, other);
-		assert_eq!(jc.password, password);
-		assert_eq!(jc.cache_token, cache_token);
-		assert_eq!(jc.profile_image, profile_image);
-	}
+	assert_eq!(jc.room, room);
+	assert_eq!(jc.token, token);
+	assert_eq!(jc.nick, nick);
+	assert_eq!(jc.id, id);
+	assert_eq!(jc.level, level);
+	assert_eq!(jc.auth, auth);
+	assert_eq!(jc.icon, icon);
+	assert_eq!(jc.nickcon, nickcon);
+	assert_eq!(jc.other, other);
+	assert_eq!(jc.password, password);
+	assert_eq!(jc.cache_token, cache_token);
+	assert_eq!(jc.profile_image, profile_image);
+}

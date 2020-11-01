@@ -1,4 +1,9 @@
 use log::*;
+use bytes::*;
+use protocol::*;
+
+mod protocol;
+use futures_util::{SinkExt, StreamExt};
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum UChatAuthLevel {
@@ -149,10 +154,10 @@ impl JoinConfig {
 	}
 
 	#[inline]
-	pub fn build(&mut self) -> String {
+	pub fn build(&self) -> uMessage {
 		return self.build_with_time(std::time::Duration::new(0, 0));
 	}
-	pub fn build_with_time(&mut self, time_delta: std::time::Duration) -> String {
+	pub fn build_with_time(&self, time_delta: std::time::Duration) -> uMessage {
 		use std::time::SystemTime;
 		use rand::Rng;
 
@@ -172,24 +177,41 @@ impl JoinConfig {
 
 		//jtest1nicknameidlevelauthiconnickcon6fe01303583a9e71e6ece678a4f268ef8TkDUyBiousTta7Ko7qwyIMU6fqgTl9lutf-81604136208
 		//this.socket.send(['j', this.id, data.nick, data.id, data.level, (data.auth||''), data.icons, data.nickcon, data.other, data.hash, session, ua.charset, data.time, this.installData.password, cache['client_token'], data.profileimg]);
-		format!(
-			"j{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}\n",
-			self.room,
-			self.nick.as_ref().unwrap_or(&"".to_string()),
-			self.id.as_ref().unwrap_or(&"".to_string()),
-			self.level.as_ref().unwrap_or(&"".to_string()),
-			self.auth.to_string(),
-			self.icon.as_ref().unwrap_or(&"".to_string()),
-			self.nickcon.as_ref().unwrap_or(&"".to_string()),
-			self.other.as_ref().unwrap_or(&"".to_string()), // other
-			hash,
-			session,
-			"utf-8",
-			time.unwrap_or("".to_string()),
-			self.password.as_ref().unwrap_or(&"".to_string()),
-			self.cache_token.as_ref().unwrap_or(&"".to_string()),
-			self.profile_image.as_ref().unwrap_or(&"".to_string()),
-		)
+		let mut buf: uMessage = uMessage::new();
+		buf.push(Message::Text("j".to_string()));
+		buf.push(Message::Text(self.room.clone()));
+		buf.push(Message::Text(self.nick.clone().unwrap_or(String::new())));
+		buf.push(Message::Text(self.id.clone().unwrap_or(String::new())));
+		buf.push(Message::Text(self.level.clone().unwrap_or(String::new())));
+		buf.push(Message::Text(self.nick.clone().unwrap_or(String::new())));
+		buf.push(Message::Text(self.icon.clone().unwrap_or(String::new())));
+		buf.push(Message::Text(self.nickcon.clone().unwrap_or(String::new())));
+		if let Some(other) = self.other.as_ref() {
+			buf.push(Message::Text(other.clone()));
+		} else {
+			buf.push(Message::None);
+		}
+		buf.push(Message::Text(hash));
+		buf.push(Message::Text(session));
+		buf.push(Message::Text("utf-8".to_string()));
+		buf.push(Message::Text(time.unwrap_or(String::new())));
+		if let Some(password) = self.password.as_ref() {
+			buf.push(Message::Text(password.clone()));
+		} else {
+			buf.push(Message::None);
+		}
+		if let Some(cache_token) = self.cache_token.as_ref() {
+			buf.push(Message::Text(cache_token.clone()));
+		} else {
+			buf.push(Message::None);
+		}
+		if let Some(profile_image) = self.profile_image.as_ref() {
+			buf.push(Message::Text(profile_image.clone()));
+		} else {
+			buf.push(Message::None);
+		}
+		
+		return buf;
 	}
 }
 
@@ -197,33 +219,41 @@ pub enum RoomControlCommand {
 
 }
 
+#[derive(Clone, Debug, PartialEq)]
 enum CurrentState {
-	none,
-	join
+	None,
+	JoinProcess,
+	Joined
 }
 
-pub struct UChatRoom {
+type wssStream = tokio_tungstenite::WebSocketStream<tokio_native_tls::TlsStream<tokio::net::TcpStream>>;
+
+pub struct UChatRoomProc {
 	access_info: JoinConfig,
+	my_info: Option<Vec<Message>>,
+
 	ws: Option<tokio_tungstenite::WebSocketStream<tokio_native_tls::TlsStream<tokio::net::TcpStream>>>,
 
 	cmd_rx: tokio::sync::mpsc::UnboundedReceiver<RoomControlCommand>,
 	cmd_tx: tokio::sync::mpsc::UnboundedSender<RoomControlCommand>,
 
-	state: CurrentState
+	state: CurrentState,
+
 }
 
-impl UChatRoom {
+impl UChatRoomProc {
 	pub fn new(access_info: JoinConfig) -> Self {
 		let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
 
-		UChatRoom {
+		Self {
 			access_info,
+			my_info: None,
 			ws: None,
 
 			cmd_rx,
 			cmd_tx,
 
-			state: CurrentState::none
+			state: CurrentState::None
 		}
 	}
 
@@ -247,30 +277,46 @@ impl UChatRoom {
 
 	pub async fn process(&mut self) -> Result<(), String> {
 		if self.ws.is_none() { return Err("웹소켓이 연결되지 않았습니다.".to_string()); }
-		let mut ws: tokio_tungstenite::WebSocketStream<tokio_native_tls::TlsStream<tokio::net::TcpStream>> = self.ws.take().unwrap();
-		use futures_util::{SinkExt, StreamExt};
+		let mut ws: wssStream = self.ws.take().unwrap();
+		self.join(&mut ws).await?;
 
-		ws.send(tokio_tungstenite::tungstenite::Message::Binary(self.access_info.build().as_bytes().to_vec())).await.map_err(|e| e.to_string())?;
 		loop {
 			tokio::select! {
 				cmd = self.cmd_rx.recv() => {
 	
 				}
 				rcv = ws.next() => {
-					debug!("{:?}", rcv);
-	
 					if rcv.is_none() {
 						return Ok(());
 					}
-	
-	
+					
 					let rcv = rcv.unwrap();
 					match rcv {
 						Err(e) => {
 	
 						},
 						Ok(item) => {
-							
+							let mut item: BytesMut = match item {
+								tokio_tungstenite::tungstenite::Message::Binary(b) => {
+									if b.len() == 0 { continue; }
+									BytesMut::from(&b[..])
+								},
+								tokio_tungstenite::tungstenite::Message::Text(t) => {
+									BytesMut::from(t.as_bytes())
+								},
+								tokio_tungstenite::tungstenite::Message::Ping(_) => {
+									ws.send(tokio_tungstenite::tungstenite::Message::Pong(Vec::new())).await.map_err(|e| e.to_string())?;
+									continue;
+								},
+								_ => { continue; }
+							};
+
+							for line in delimit_line(&mut item) {
+								let line = uMessage::unpack(line).unwrap();
+								if line.len() == 0 { continue; }
+
+								self.process_line(&mut ws, line).await;
+							}
 						}
 					}
 				}
@@ -279,9 +325,65 @@ impl UChatRoom {
 
 		return Ok(());
 	}
+	
+	async fn process_line(&mut self, ws: &mut wssStream, data: Vec<Message>) {
+		if let Some(key) = data.get(0) {
+			match key {
+				Message::Text(v) if v == "i1" => {
+					self.state = CurrentState::JoinProcess;
+					return;
+				}
+				Message::Text(v) if v == "k" && self.state == CurrentState::JoinProcess => {
+					self.my_info = Some(data);
+					return;
+				}
+				Message::Text(v) if v == "i2" => {
+					self.state = CurrentState::Joined;
+					ws.send(tokio_tungstenite::tungstenite::Message::Binary("commanduserList'\n".as_bytes().to_vec())).await;
+					ws.send(tokio_tungstenite::tungstenite::Message::Binary("commandio1\n".as_bytes().to_vec())).await;
+					ws.send(tokio_tungstenite::tungstenite::Message::Binary("commandchatList\n".as_bytes().to_vec())).await;
+					ws.send(tokio_tungstenite::tungstenite::Message::Binary("commandnoticeList\n".as_bytes().to_vec())).await;
+
+					return;
+				}
+				Message::Text(v) if v == "k" => {
+					// TODO
+
+					return;
+				}
+				_ => {}
+			}
+		}
+
+		self.on_receive(ws, data).await;
+	}
+	async fn join(&self, ws: &mut wssStream) -> Result<(), String> {
+		debug!("{:?}", String::from_utf8(self.access_info.build().pack().to_vec()));
+		return
+			ws.send(
+				tokio_tungstenite::tungstenite::Message::Binary(
+					(&self.access_info.build().pack()).to_vec()
+				)
+			).await.map_err(|e| e.to_string());
+	}
 }
 
-impl Drop for UChatRoom {
+#[async_trait]
+impl UChatRoom for UChatRoomProc {
+	async fn on_receive(&mut self, ws: &mut wssStream, data: Vec<Message>) {
+		info!("rcv {:?}", data);
+	}
+}
+
+use async_trait::async_trait;
+#[async_trait]
+trait UChatRoom {
+	async fn on_receive(&mut self, ws: &mut wssStream, data: Vec<Message>) {
+		// you have to code
+	}
+}
+
+impl Drop for UChatRoomProc {
 	fn drop(&mut self) {
 		self.cmd_rx.close();
 		while let Ok(_) = self.cmd_rx.try_recv() {

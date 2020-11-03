@@ -1,5 +1,9 @@
 use bytes::*;
 
+pub struct userKey {
+
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Message {
 	//Header(u8),
@@ -93,7 +97,7 @@ impl uMessage {
 	}
 	pub fn unpack(mut buf: BytesMut) -> Self {
 		let mut inner = Vec::new();
-		// log::debug!("rcv buf {:?}", buf);
+		log::debug!("rcv buf {:?}", buf);
 
 		if buf.len() > 0 {
 			// inner.push(Message::Header(buf[0]));
@@ -184,7 +188,7 @@ pub fn delimit_line(buf: &mut BytesMut) -> Vec<BytesMut> {
 			b'\\' => {
 				if buf.len() > 1 && buf[1] == b'\n' {
 					tmp.put_u8(b'\n');
-					buf.advance(1);
+					buf.advance(2);
 
 					continue;
 				} else {

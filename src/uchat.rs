@@ -230,7 +230,7 @@ type wssStream = tokio_tungstenite::WebSocketStream<tokio_native_tls::TlsStream<
 
 pub struct UChatRoomProc {
 	access_info: JoinConfig,
-	my_info: Option<Vec<Message>>,
+	my_info: protocol::userKey,
 
 	ws: Option<tokio_tungstenite::WebSocketStream<tokio_native_tls::TlsStream<tokio::net::TcpStream>>>,
 
@@ -247,7 +247,7 @@ impl UChatRoomProc {
 
 		Self {
 			access_info,
-			my_info: None,
+			my_info: protocol::userKey::empty(),
 			ws: None,
 
 			cmd_rx,
@@ -334,7 +334,9 @@ impl UChatRoomProc {
 					return;
 				}
 				Message::Text(v) if v == "k" && self.state == CurrentState::JoinProcess => {
-					self.my_info = Some(data);
+					self.my_info = protocol::userKey::unpack(data).unwrap();
+					info!("my info: {:?}", self.my_info);
+
 					return;
 				}
 				Message::Text(v) if v == "i2" => {
@@ -348,6 +350,8 @@ impl UChatRoomProc {
 				}
 				Message::Text(v) if v == "k" => {
 					// TODO
+
+					debug!("k {:?}", protocol::userKey::unpack(data));
 
 					return;
 				}

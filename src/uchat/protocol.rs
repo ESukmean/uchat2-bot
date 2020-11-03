@@ -1,7 +1,89 @@
 use bytes::*;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct userKey {
+	//k [Text("k"), Binary(b"\xba\xf4\xcf\x1bg\xb7C\x11"), Text("탁월한지도자"), Text(""), None, Number(0), Text(""), Text(""), Number(-1413504929), Number(0), Binary(b"$\x87\x06\x83e\xd8%\t")]
+	/* var user = {
+		'nick':data[1]
+		, 'id':data[2]
+		, 'level':data[3]
+		, 'auth':data[4]
+		, 'icons':data[5]
+		, 'nickcon':data[6]
+		, 'connected':getTimeStamp(data[7])
+		, 'time': data[7]
+		, 'mute':data[8]&1
+		, 'session':(data[9]||'').hexEncode()
+		, 'profileimg':data[10]
+	}; */
+	key: Bytes,
+	nick: String,
+	id: String,
+	level: Option<String>,
+	auth: i32,
+	icon: String,
+	nickcon: String,
+	connected: std::time::SystemTime,
+	mute: bool,
+	session: Bytes,
+	profileimg: Option<String>
+}
 
+impl userKey {
+	pub fn empty() -> Self {
+		Self {
+			key: Bytes::new(),
+			nick: String::new(),
+			id: String::new(),
+			level: None,
+			auth: 0,
+			icon: String::new(),
+			nickcon: String::new(),
+			connected: std::time::UNIX_EPOCH,
+			mute: false,
+			session: Bytes::new(),
+			profileimg: None
+		}
+	}
+	pub fn unpack(mut data: Vec<Message>) -> Result<Self, ()> {
+		if data.len() < 11 { return Err(()); } // 11개면 profile img 미포함, 12개면 profile img 포함
+		// let mut data = msg.unwrap();
+		// Vec구조상 맨 앞의 원소를 제거하면 뒤에거를 다 앞으로 땡겨야 하니까.. 뒤에서 부터 치고 나감.
+
+		let mut profileimg = None;
+		if data.len() == 12 {
+			// 12번째 필드가 있을수도, 없을수도 있음.
+			profileimg = data.remove(11).unwrap_text().ok();
+		}
+		let session = data.remove(10).unwrap_binary().unwrap_or(Bytes::new());
+		let mute = data.remove(9).unwrap_number().unwrap_or(0) != 0;
+		let connected = data.remove(8).unwrap_number().map(|v| v as u32).map(|v| std::time::UNIX_EPOCH + std::time::Duration::from_secs(v as u64)).unwrap();
+		let nickcon = data.remove(7).unwrap_text().unwrap_or("".to_string());
+		let icon = data.remove(6).unwrap_text().unwrap_or("".to_string());
+		let auth = data.remove(5).unwrap_number().unwrap_or(0) as i32;
+		let level = data.remove(4).unwrap_text().ok();
+		let id = data.remove(3).unwrap_text().unwrap_or("".to_string());
+		let nick = data.remove(2).unwrap_text().unwrap_or("".to_string());
+		let key =  data.remove(1).unwrap_binary().unwrap_or(Bytes::new());
+		// 0 -> "k" type
+
+		return Ok(
+			userKey {
+				key,
+				nick,
+				id,
+				level,
+				auth,
+				icon,
+				nickcon,
+				connected,
+				mute,
+				session,
+				profileimg
+			}
+		);
+		// return Err(());
+	}
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -83,6 +165,43 @@ impl Message {
 			}
 		}
 	}
+
+	pub fn unwrap_text(self) -> Result<String, ()> {
+		match self {
+			Message::Text(v) => return Ok(v),
+			_ => return Err(())
+		};
+	}
+	pub fn unwrap_binary(self) -> Result<Bytes, ()> {
+		match self {
+			Message::Binary(v) => return Ok(v),
+			_ => return Err(())
+		};
+	}
+	pub fn unwrap_boolean(self) -> Result<bool, ()> {
+		match self {
+			Message::Boolean(v) => return Ok(v),
+			_ => return Err(())
+		};
+	}
+	pub fn unwrap_number(self) -> Result<i64, ()> {
+		match self {
+			Message::Number(v) => return Ok(v),
+			_ => return Err(())
+		};
+	}
+	pub fn unwrap_float(self) -> Result<f64, ()> {
+		match self {
+			Message::Float(v) => return Ok(v),
+			_ => return Err(())
+		};
+	}
+	pub fn unwrap_none(self) -> Result<Option<()>, ()> {
+		match self {
+			Message::None => return Ok(None),
+			_ => return Err(())
+		};
+	}
 }
 
 #[derive(Debug)]
@@ -97,7 +216,8 @@ impl uMessage {
 	}
 	pub fn unpack(mut buf: BytesMut) -> Self {
 		let mut inner = Vec::new();
-		log::debug!("rcv buf {:?}", buf);
+		// log::debug!("rcv buf {:?}", buf);
+		// log::debug!("data {:?}", buf);
 
 		if buf.len() > 0 {
 			// inner.push(Message::Header(buf[0]));

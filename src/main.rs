@@ -1,6 +1,11 @@
 use log::*;
+use async_trait::async_trait;
 
 mod uchat;
+use uchat::*;
+
+mod roomImpl;
+use roomImpl::*;
 
 #[cfg(test)]
 mod test_uchat;
@@ -20,12 +25,12 @@ fn main() {
 	info!("runtime stopped");
 }
 
-
 async fn entry() {
 	let ac = uchat::JoinConfig::new("#bWFpbg==".to_string());
-	let mut uconn = uchat::UChatRoomProc::new(ac);
+	let mut uconn = uchat::UChatRoomProc::new(ac, UBasicRoom::new());
 	let r = uconn.connect().await;
 	debug!("{:?}", r);
 	let r = uconn.process().await;
 	debug!("{:?}", r);
 }
+

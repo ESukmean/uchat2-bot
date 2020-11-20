@@ -16,17 +16,17 @@ pub struct userKey {
 		, 'session':(data[9]||'').hexEncode()
 		, 'profileimg':data[10]
 	}; */
-	key: Bytes,
-	nick: String,
-	id: String,
-	level: Option<String>,
-	auth: i32,
-	icon: String,
-	nickcon: String,
-	connected: std::time::SystemTime,
-	mute: bool,
-	session: Bytes,
-	profileimg: Option<String>
+	pub key: Bytes,
+	pub nick: String,
+	pub id: String,
+	pub level: Option<String>,
+	pub auth: i32,
+	pub icon: String,
+	pub nickcon: String,
+	pub connected: std::time::SystemTime,
+	pub mute: bool,
+	pub session: Bytes,
+	pub profileimg: Option<String>
 }
 
 impl userKey {

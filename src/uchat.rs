@@ -1,6 +1,6 @@
+pub use protocol::*;
 use log::*;
 use bytes::*;
-use protocol::*;
 
 mod protocol;
 use futures_util::{SinkExt, StreamExt};
@@ -226,9 +226,9 @@ enum CurrentState {
 	Joined
 }
 
-type wssStream = tokio_tungstenite::WebSocketStream<tokio_native_tls::TlsStream<tokio::net::TcpStream>>;
+pub type wssStream = tokio_tungstenite::WebSocketStream<tokio_native_tls::TlsStream<tokio::net::TcpStream>>;
 
-pub struct UChatRoomProc {
+pub struct UChatRoomProc<T> {
 	access_info: JoinConfig,
 	my_info: protocol::userKey,
 
@@ -238,11 +238,11 @@ pub struct UChatRoomProc {
 	cmd_tx: tokio::sync::mpsc::UnboundedSender<RoomControlCommand>,
 
 	state: CurrentState,
-
+	room: T
 }
 
-impl UChatRoomProc {
-	pub fn new(access_info: JoinConfig) -> Self {
+impl<T> UChatRoomProc<T> where T: UChatRoom + Send{
+	pub fn new(access_info: JoinConfig, room: T) -> Self {
 		let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
 
 		Self {
@@ -253,7 +253,8 @@ impl UChatRoomProc {
 			cmd_rx,
 			cmd_tx,
 
-			state: CurrentState::None
+			state: CurrentState::None,
+			room,
 		}
 	}
 
@@ -279,6 +280,8 @@ impl UChatRoomProc {
 		if self.ws.is_none() { return Err("웹소켓이 연결되지 않았습니다.".to_string()); }
 		let mut ws: wssStream = self.ws.take().unwrap();
 		self.join(&mut ws).await?;
+		
+		let mut ping_interval = tokio::time::interval(std::time::Duration::from_secs(30));
 
 		loop {
 			tokio::select! {
@@ -287,12 +290,13 @@ impl UChatRoomProc {
 				}
 				rcv = ws.next() => {
 					if rcv.is_none() {
+						self.room.on_closed().await;
 						return Ok(());
 					}
 					
 					let rcv = rcv.unwrap();
 					match rcv {
-						Err(e) => {
+						Err(_) => {
 	
 						},
 						Ok(item) => {
@@ -320,6 +324,13 @@ impl UChatRoomProc {
 						}
 					}
 				}
+				_ = ping_interval.tick() => {
+					debug!("핑 전송 시도");
+
+					if let Err(_) = ws.send(tokio_tungstenite::tungstenite::Message::Binary(b"p\n".to_vec())).await {
+						self.room.on_err("ping 전송 실패".to_string()).await;
+					}
+				}
 			}
 		}
 
@@ -334,8 +345,14 @@ impl UChatRoomProc {
 					return;
 				}
 				Message::Text(v) if v == "k" && self.state == CurrentState::JoinProcess => {
-					self.my_info = protocol::userKey::unpack(data).unwrap();
-					info!("my info: {:?}", self.my_info);
+					if let Ok(k) = protocol::userKey::unpack(data) {
+						self.my_info = k;
+						
+						debug!("my info: {:?}", self.my_info);
+						self.room.on_join(&self.my_info).await;
+					} else {
+						self.room.on_err("내 정보 수신 실패".to_string()).await;
+					}
 
 					return;
 				}
@@ -349,9 +366,11 @@ impl UChatRoomProc {
 					return;
 				}
 				Message::Text(v) if v == "k" => {
-					// TODO
-
-					debug!("k {:?}", protocol::userKey::unpack(data));
+					if let Ok(k) = protocol::userKey::unpack(data) {
+						debug!("new key: {:?}", k);
+	
+						self.room.on_key(ws, k).await;
+					}
 
 					return;
 				}
@@ -359,7 +378,7 @@ impl UChatRoomProc {
 			}
 		}
 
-		self.on_receive(ws, data).await;
+		self.room.on_receive(ws, data).await;
 	}
 	async fn join(&self, ws: &mut wssStream) -> Result<(), String> {
 		debug!("{:?}", String::from_utf8(self.access_info.build().pack().to_vec()));
@@ -372,22 +391,20 @@ impl UChatRoomProc {
 	}
 }
 
-#[async_trait]
-impl UChatRoom for UChatRoomProc {
-	async fn on_receive(&mut self, ws: &mut wssStream, data: Vec<Message>) {
-		info!("rcv {:?}", data);
-	}
-}
-
 use async_trait::async_trait;
 #[async_trait]
-trait UChatRoom {
-	async fn on_receive(&mut self, ws: &mut wssStream, data: Vec<Message>) {
-		// you have to code
+pub trait UChatRoom {
+	async fn on_receive(&mut self, ws: &mut wssStream, data: Vec<Message>);
+	async fn on_key(&mut self, ws: &mut wssStream, data: userKey);
+	async fn on_join(&mut self, my: &userKey);
+	async fn on_err(&mut self, err: String) {
+		error!("{:?}", err);
+	}
+	async fn on_closed(&mut self) {
+		warn!("stream closed");
 	}
 }
-
-impl Drop for UChatRoomProc {
+impl<T> Drop for UChatRoomProc<T> {
 	fn drop(&mut self) {
 		self.cmd_rx.close();
 		while let Ok(_) = self.cmd_rx.try_recv() {

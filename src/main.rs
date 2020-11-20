@@ -1,5 +1,5 @@
-use log::*;
 use async_trait::async_trait;
+use log::*;
 
 mod uchat;
 use uchat::*;
@@ -18,7 +18,7 @@ fn main() {
 		.on_thread_start(|| debug!("new thread start"))
 		.on_thread_stop(|| debug!("thread stopped"))
 		.build()
-		.unwrap(); 
+		.unwrap();
 
 	info!("runtime start");
 	runtime.block_on(entry());
@@ -33,4 +33,3 @@ async fn entry() {
 	let r = uconn.process().await;
 	debug!("{:?}", r);
 }
-

@@ -1,14 +1,13 @@
-use super::uchat::*;
 use super::roomImpl::*;
+use super::uchat::*;
 use async_trait::async_trait;
-
 
 #[tokio::test]
 async fn test_connect() {
 	let jc = JoinConfig::new("#bWFpbg==".to_string());
 	let uroom = UBasicRoom::new();
 	let mut uconn = UChatRoomProc::<UBasicRoom>::new(jc, uroom);
-	
+
 	assert_eq!(true, uconn.connect().await.is_ok());
 }
 #[tokio::test]
@@ -46,7 +45,8 @@ fn test_join_config() {
 	let profile_image: Option<String> = Some("profile_image".to_string());
 	// }
 	let jc = JoinConfig::new(room.clone());
-	let jc = jc.token(token.clone())
+	let jc = jc
+		.token(token.clone())
 		.nick(nick.clone())
 		.id(id.clone())
 		.level(level.clone())
@@ -57,7 +57,7 @@ fn test_join_config() {
 		.password(password.clone())
 		.client_token(cache_token.clone())
 		.profile_image(profile_image.clone());
-	
+
 	assert_eq!(jc.room, room);
 	assert_eq!(jc.token, token);
 	assert_eq!(jc.nick, nick);

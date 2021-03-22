@@ -28,6 +28,7 @@ fn main() {
 async fn entry() {
 	let ac = uchat::JoinConfig::new("#bWFpbg==".to_string());
 	let mut uconn = uchat::UChatRoomProc::new(ac, UBasicRoom::new());
+	debug!("try connect");
 	let r = uconn.connect().await;
 	debug!("{:?}", r);
 	let r = uconn.process().await;

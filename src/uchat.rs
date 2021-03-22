@@ -163,8 +163,10 @@ impl JoinConfig {
 
 		let session: String = rand::thread_rng()
 			.sample_iter(rand::distributions::Alphanumeric)
+			.map(|b| std::char::from_u32(b as u32).unwrap())
 			.take(32)
 			.collect();
+
 		let mut time: Option<String> = None;
 
 		let hash = match self.token.as_ref() {
@@ -272,22 +274,24 @@ where
 
 	pub async fn connect(&mut self) -> Result<(), String> {
 		return self
-			.connect_with_uri(url::Url::parse("ws://kr-a-worker1.uchat.io:5001/").unwrap())
+			.connect_with_uri(url::Url::parse("ws://sp-worker.uchat.io:80/").unwrap())
 			.await;
 	}
 	pub async fn connect_with_uri(&mut self, uri: url::Url) -> Result<(), String> {
 		let tls_connector = native_tls::TlsConnector::new().map_err(|e| e.to_string())?;
 		let tls_conn = tokio_native_tls::TlsConnector::from(tls_connector);
 
-		let tcp = tokio::net::TcpStream::connect((uri.host_str().unwrap(), uri.port().unwrap()))
+		let tcp = tokio::net::TcpStream::connect((uri.host_str().unwrap(), uri.port().unwrap_or(443)))
 			.await
 			.map_err(|e| e.to_string())?;
 		let tls = tls_conn
 			.connect(uri.host_str().unwrap(), tcp)
 			.await
 			.map_err(|e| e.to_string())?;
+
+		debug!("tls: {:?}", tls);
 		self.ws.replace(
-			tokio_tungstenite::client_async_tls(uri.as_str(), tls)
+			tokio_tungstenite::client_async(uri.as_str(), tls)
 				.await
 				.map_err(|e| e.to_string())?
 				.0,
@@ -359,9 +363,27 @@ where
 		return Ok(());
 	}
 
-	async fn process_line(&mut self, ws: &mut wss_stream, data: Vec<Message>) {
+	async fn process_line(&mut self, ws: &mut wss_stream, mut data: Vec<Message>) {
 		if let Some(key) = data.get(0) {
 			match key {
+				Message::Text(v) if v == "k" => {
+					if let Ok(k) = protocol::userKey::unpack(data) {
+						self.room.on_key(ws, k).await;
+					}
+
+					return;
+				}
+				Message::Text(v) if v == "o" => {
+					if data.len() < 1 {
+						return;
+					}
+					
+					if let Ok(nick) = data.remove(1).unwrap_text() { 
+						self.room.on_out(nick);
+					} else {
+						self.room.on_raw_err("접속 종료한 유저 처리에 실패".to_string());
+					}
+				}
 				Message::Text(v) if v == "i1" => {
 					self.state = CurrentState::JoinProcess;
 					return;
@@ -370,8 +392,7 @@ where
 					if let Ok(k) = protocol::userKey::unpack(data) {
 						self.my_info = k;
 
-						debug!("my info: {:?}", self.my_info);
-						self.room.on_join(&self.my_info).await;
+						self.room.on_connected(&self.my_info).await;
 					} else {
 						self.room.on_raw_err("내 정보 수신 실패".to_string()).await;
 					}
@@ -396,15 +417,6 @@ where
 						"commandnoticeList\n".as_bytes().to_vec(),
 					))
 					.await;
-
-					return;
-				}
-				Message::Text(v) if v == "k" => {
-					if let Ok(k) = protocol::userKey::unpack(data) {
-						debug!("new key: {:?}", k);
-
-						self.room.on_key(ws, k).await;
-					}
 
 					return;
 				}
@@ -439,7 +451,8 @@ pub trait UChatRoom {
 	fn on_create(&mut self, cmd_tx: tokio::sync::mpsc::UnboundedSender<RoomControlCommand>);
 	async fn on_receive(&mut self, ws: &mut wss_stream, data: Vec<Message>);
 	async fn on_key(&mut self, ws: &mut wss_stream, data: userKey);
-	async fn on_join(&mut self, my: &userKey);
+	async fn on_connected(&mut self, my: &userKey);
+	async fn on_out(&mut self, nick: String);
 	async fn on_raw_err(&mut self, err: String) {
 		error!("{:?}", err);
 	}
@@ -451,8 +464,11 @@ pub trait UChatRoom {
 impl<T> Drop for UChatRoomProc<T> {
 	fn drop(&mut self) {
 		self.cmd_rx.close();
-		while let Ok(_) = self.cmd_rx.try_recv() {
-			// 남아있는 메세지 정리
+		
+		let mut waker = futures::task::noop_waker();
+		let mut ctx = std::task::Context::from_waker(&waker);
+		while let std::task::Poll::Ready(result) = self.cmd_rx.poll_recv(&mut ctx) {
+			if result.is_none() { break }
 		}
 	}
 }
